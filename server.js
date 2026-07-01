@@ -7,8 +7,8 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-
+app.use(express.json({ limit: '50mb' }))
+        model: 'claude-sonnet-4-6',
 const API_KEY = process.env.WORKSPACE_API_KEY || 'claude-workspace-key';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const FILES_DIR = './workspace/files';
