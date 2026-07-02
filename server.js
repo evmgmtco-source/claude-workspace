@@ -187,12 +187,33 @@ async function agentLoop(){
     }
     else{log('agent-wait','No executable action this cycle');}
 
-  }catch(e){log('agent-err',e.message?.slice(0,80));}
+  }catch(e){log('agent-err',e.message?.slice(0,80));}finally{pushMemToGitHub().catch(()=>{});}
+}
+
+
+// ── GITHUB MEMORY SYNC ────────────────────────────────────────────────────────
+async function syncMemFromGitHub(){
+  if(!GH)return;
+  try{
+    const r=await fetch('https://api.github.com/repos/evmgmtco-source/claude-workspace/contents/memory.json',{headers:{'Authorization':'Bearer '+GH}});
+    if(r.ok){const j=await r.json();const m=JSON.parse(Buffer.from(j.content.replace(/\n/g,''),'base64').toString());fs.writeFileSync(MF,JSON.stringify(m,null,2));log('mem-sync','Loaded from GitHub '+Object.keys(m.context).length+' ctx keys');}
+  }catch(e){log('mem-sync-err',e.message);}
+}
+async function pushMemToGitHub(){
+  if(!GH)return;
+  try{
+    const content=fs.readFileSync(MF,'utf8');
+    const r=await fetch('https://api.github.com/repos/evmgmtco-source/claude-workspace/contents/memory.json',{headers:{'Authorization':'Bearer '+GH}});
+    const sha=r.ok?(await r.json()).sha:undefined;
+    const enc=Buffer.from(content).toString('base64');
+    await fetch('https://api.github.com/repos/evmgmtco-source/claude-workspace/contents/memory.json',{method:'PUT',headers:{'Authorization':'Bearer '+GH,'Content-Type':'application/json'},body:JSON.stringify({message:'Auto memory sync',content:enc,...(sha?{sha}:{})})});
+    log('mem-push','Synced to GitHub');
+  }catch(e){log('mem-push-err',e.message);}
 }
 
 const PORT=process.env.PORT||8080;
 app.listen(PORT,()=>{
-  log('startup','v6 autonomous agent online');
+  log('startup','v6 autonomous agent online');syncMemFromGitHub().catch(()=>{});
   console.log('v6 port '+PORT);
   // Run every 3 hours
   setInterval(agentLoop,3*60*60*1000);
