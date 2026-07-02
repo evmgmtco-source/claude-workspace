@@ -27,12 +27,15 @@ app.post('/github/push',auth,async(req,res)=>{if(!GITHUB_TOKEN)return res.status
 async function postTweet(text){
   try{
     const client=getTwitterClient();
-    const result=await client.v2.tweet(text);
+    const rwClient=client.readWrite;
+    const result=await rwClient.v2.tweet(text);
     addLog('tweet','✓ '+text.slice(0,60));
     return{success:true,id:result.data.id};
   }catch(e){
-    addLog('tweet-fail',e.message?.slice(0,100)||JSON.stringify(e.data).slice(0,100));
-    return{success:false,error:e.message,data:e.data};
+    const errMsg=e.message||'unknown';
+    const errData=e.data?JSON.stringify(e.data).slice(0,150):'none';
+    addLog('tweet-fail',errMsg.slice(0,80)+' data:'+errData);
+    return{success:false,error:errMsg,data:e.data};
   }
 }
 app.post('/tweet',auth,async(req,res)=>{const result=await postTweet(req.body.text);res.json(result);});
