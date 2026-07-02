@@ -1,5 +1,10 @@
 {
-  "notes": {},
+  "notes": {
+    "fetch_1782996062010": {
+      "value": "Fetched https://clipflow.evmgmtco.workers.dev: <!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>ClipFlow - Auto-post Kick.com clips to TikTok</title><meta name=\"de",
+      "t": "2026-07-02T12:41:02.010Z"
+    }
+  },
   "context": {
     "clipflow_url": "https://clipflow.evmgmtco.workers.dev",
     "payment_link": "https://buy.stripe.com/bJe3cu4Ii99Le2F17B1VK00 ClipFlow £9.99/mo",
