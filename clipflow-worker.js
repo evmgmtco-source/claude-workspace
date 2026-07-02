@@ -261,6 +261,7 @@ export default {
       }
       return authed ? new Response(null, { status: 302, headers: { 'Location': '/dashboard' } }) : html(loginPage());
     }
-    return html(page('Not found', `<div class="wrap hero"><h1>Page not found</h1><p class="sub">That page does not exist. <a href="/" style="border-bottom:1px solid var(--line)">Back to home</a></p></div>`), 404);
+    if (p === '/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et') return new Response('tiktok-developers-site-verification=y0q4dNmzX45pmh3mSQtLGJUz8888D7et', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+        return html(page('Not found', `<div class="wrap hero"><h1>Page not found</h1><p class="sub">That page does not exist. <a href="/" style="border-bottom:1px solid var(--line)">Back to home</a></p></div>`), 404);
   }
 };
