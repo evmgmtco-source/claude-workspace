@@ -1,0 +1,14 @@
+{
+  "notes": {},
+  "context": {
+    "clipflow_url": "https://clipflow.evmgmtco.workers.dev",
+    "payment_link": "https://buy.stripe.com/bJe3cu4Ii99Le2F17B1VK00 ClipFlow £9.99/mo",
+    "github_org": "evmgmtco-source",
+    "social_agent_url": "https://agentnet-social-production.up.railway.app",
+    "revenue_target": "2 ClipFlow signups = break even at £9.99/mo each",
+    "strategy": "Drive traffic to clipflow.evmgmtco.workers.dev. Use /fetch to research Kick/TikTok communities. Use /github/push to improve ClipFlow landing page. Fix Twitter auth.",
+    "costs": "Railway ~£10/mo, Anthropic haiku ~£1-2/mo. Total ~£12/mo. Need 2 signups to break even.",
+    "twitter_status": "Twitter OAuth returning 401 - all 4 keys present but auth fails. App: @evclaude00, App ID 33144263"
+  },
+  "tasks": []
+}
