@@ -223,7 +223,8 @@ async function deployWorkersFromRepo(){
       const f=await fetch('https://raw.githubusercontent.com/evmgmtco-source/claude-workspace/main/'+w.file+'?t='+Date.now());
       if(!f.ok){log('cf-auto-skip',w.file);continue;}
       const script=await f.text();
-      const res=await fetch('https://api.cloudflare.com/client/v4/accounts/'+CF_A+'/workers/scripts/'+w.name,{method:'PUT',headers:{'Authorization':'Bearer '+CF_T,'Content-Type':'application/javascript+module'},body:script});
+      const fd=new FormData();fd.append('metadata',new Blob([JSON.stringify({main_module:'worker.js',compatibility_date:'2025-01-01'})],{type:'application/json'}));fd.append('worker.js',new Blob([script],{type:'application/javascript+module'}),'worker.js');
+      const res=await fetch('https://api.cloudflare.com/client/v4/accounts/'+CF_A+'/workers/scripts/'+w.name,{method:'PUT',headers:{'Authorization':'Bearer '+CF_T},body:fd});
       const d=await res.json();
       log('cf-auto-deploy',w.name+': '+(d.success?'OK':JSON.stringify(d.errors).slice(0,80)));
     }
