@@ -74,8 +74,7 @@ async function downloadSource(url) {
     '--merge-output-format', 'mp4',
     '-o', out,
     url
-  ], { maxBuffer: 10 * 1024 * 1024 });
-  if (!fs.existsSync(out)) throw new Error('yt-dlp did not produce an output file');
+  ], { maxBuffer: 10 * 1024 * 1024 });stsSync(out)) throw new Error('yt-dlp did not produce an output file');
   return out;
 }
 
