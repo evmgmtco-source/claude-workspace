@@ -11,6 +11,9 @@ const CF_A=process.env.CLOUDFLARE_ACCOUNT_ID;
 const XK=process.env.X_API_KEY,XS=process.env.X_API_SECRET,XT=process.env.X_ACCESS_TOKEN,XTS=process.env.X_ACCESS_SECRET;
 
 const FD='./workspace/files',MF='./workspace/memory.json',LF='./workspace/log.json',PF='./workspace/plans.json';
+const SPEC_PATHS=['./spec-v2.md','./skills/revenue-stack-skill/SKILL.md'];
+let _spec={t:0,v:''};
+function spec(){const now=Date.now();if(now-_spec.t<60000)return _spec.v;for(const p of SPEC_PATHS){try{_spec={t:now,v:require('fs').readFileSync(p,'utf8')};return _spec.v;}catch(e){}}_spec={t:now,v:''};return '';}
 [FD,'./workspace'].forEach(d=>{if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true})});
 if(!fs.existsSync(MF))fs.writeFileSync(MF,JSON.stringify({notes:{},context:{},tasks:[]}));
 if(!fs.existsSync(LF))fs.writeFileSync(LF,JSON.stringify([]));
@@ -57,7 +60,7 @@ app.post('/think',auth,async(q,r)=>{
   const ctx=Object.entries(m.context).map(([k,v])=>k+': '+v).join('\n');
   const tasks=m.tasks.filter(t=>!t.done).slice(0,5).map(t=>'- '+t.task).join('\n');
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANT,'anthropic-version':'2023-06-01'},body:JSON.stringify({model,max_tokens,system:system||('Autonomous AI agent for AgentNet/ClipFlow.\nContext:\n'+ctx+'\nPending:\n'+tasks),messages:[{role:'user',content:prompt}]})});
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANT,'anthropic-version':'2023-06-01'},body:JSON.stringify({model,max_tokens,system:system||((spec()||'Autonomous AI agent for AgentNet/ClipFlow.')+'\n\n## Live context\n'+ctx+'\n\n## Pending tasks\n'+tasks),messages:[{role:'user',content:prompt}]})});
     const d=await res.json();
     const text=d.content?.[0]?.text||JSON.stringify(d);
     log('think-done',text.slice(0,60));
@@ -134,8 +137,7 @@ async function agentLoop(){
   try{
     // 1. THINK: plan concrete next action
     const planRes=await fetch('http://localhost:'+PORT+'/think',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':K},body:JSON.stringify({
-      prompt:'You are an autonomous agent. Revenue goal: get ClipFlow signups at clipflow.evmgmtco.workers.dev (£9.99/mo via buy.stripe.com/bJe3cu4Ii99Le2F17B1VK00). You can: fetch URLs, push to GitHub, deploy Cloudflare workers, check APIs. What ONE concrete action should you take right now to drive revenue or reduce costs? Reply with JSON: {"action":"fetch|github|cloudflare|tweet|wait","details":{...},"reason":"why"}',
-      system:'Autonomous revenue agent. Be decisive. Pick one action and explain it in JSON only, no other text.',
+      prompt:'You are an autonomous agent. Revenue goal: get ClipFlow signups at clipflow.evmgmtco.workers.dev (£9.99/mo via buy.stripe.com/bJe3cu4Ii99Le2F17B1VK00). You can: fetch URLs, push to GitHub, deploy Cloudflare workers, check APIs. What ONE concrete action should you take right now to drive revenue or reduce costs? Be decisive. Reply with ONLY JSON, no other text: {"action":"fetch|github|cloudflare|tweet|wait","details":{...},"reason":"why"}',
       max_tokens:400
     })});
     const planData=await planRes.json();
