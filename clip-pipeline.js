@@ -1,4 +1,4 @@
-PASTE_TEST_123// clip-pipeline.js
+// clip-pipeline.js
 // Clip-cutting pipeline: resolve → download → ffmpeg segment → output file
 // Designed for the Claude Workspace server (Railway). Requires yt-dlp + ffmpeg
 // (both installed in the Docker image).
@@ -74,7 +74,8 @@ async function downloadSource(url) {
     '--merge-output-format', 'mp4',
     '-o', out,
     url
-  ], { maxBuffer: 10 * 1024 * 1024 });stsSync(out)) throw new Error('yt-dlp did not produce an output file');
+  ], { maxBuffer: 10 * 1024 * 1024 });
+  if (!fs.existsSync(out)) throw new Error('yt-dlp did not produce an output file');
   return out;
 }
 

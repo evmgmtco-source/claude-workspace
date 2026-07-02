@@ -231,6 +231,8 @@ async function deployWorkersFromRepo(){
   }catch(e){log('cf-auto-err',e.message?.slice(0,80));}
 }
 
+try{require('./clip-endpoint')(app);log('startup','clip endpoint mounted');}catch(e){log('clip-mount-err',e.message);}
+
 const PORT=process.env.PORT||8080;
 app.listen(PORT,()=>{
   log('startup','v6 autonomous agent online');syncMemFromGitHub().catch(()=>{});deployWorkersFromRepo().catch(()=>{});
