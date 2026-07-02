@@ -1,0 +1,5 @@
+{
+  "workers": [
+    { "name": "clipflow", "file": "clipflow-worker.js" }
+  ]
+}

@@ -213,9 +213,26 @@ async function pushMemToGitHub(){
   }catch(e){log('mem-push-err',e.message);}
 }
 
+async function deployWorkersFromRepo(){
+  if(!CF_T||!CF_A)return;
+  try{
+    const man=await fetch('https://raw.githubusercontent.com/evmgmtco-source/claude-workspace/main/deploy.json?t='+Date.now());
+    if(!man.ok)return;
+    const {workers=[]}=await man.json();
+    for(const w of workers){
+      const f=await fetch('https://raw.githubusercontent.com/evmgmtco-source/claude-workspace/main/'+w.file+'?t='+Date.now());
+      if(!f.ok){log('cf-auto-skip',w.file);continue;}
+      const script=await f.text();
+      const res=await fetch('https://api.cloudflare.com/client/v4/accounts/'+CF_A+'/workers/scripts/'+w.name,{method:'PUT',headers:{'Authorization':'Bearer '+CF_T,'Content-Type':'application/javascript+module'},body:script});
+      const d=await res.json();
+      log('cf-auto-deploy',w.name+': '+(d.success?'OK':JSON.stringify(d.errors).slice(0,80)));
+    }
+  }catch(e){log('cf-auto-err',e.message?.slice(0,80));}
+}
+
 const PORT=process.env.PORT||8080;
 app.listen(PORT,()=>{
-  log('startup','v6 autonomous agent online');syncMemFromGitHub().catch(()=>{});
+  log('startup','v6 autonomous agent online');syncMemFromGitHub().catch(()=>{});deployWorkersFromRepo().catch(()=>{});
   console.log('v6 port '+PORT);
   // Run every 3 hours
   setInterval(agentLoop,3*60*60*1000);
