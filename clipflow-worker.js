@@ -69,7 +69,7 @@ function page(title, body, activeNote = '') {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} — ClipFlow</title>
 <meta name="description" content="ClipFlow finds your best Kick.com stream moments and turns them into TikTok-ready clips.">
-${BRAND.fonts}<style>${BRAND.css}</style></head><body>
+${BRAND.fonts}<meta name="tiktok-developers-site-verification" content="y0q4dNmzX45pmh3mSQtLGJUz8888D7et"><style>${BRAND.css}</style></head><body>
 <nav><div class="wrap">
 <a class="logo" href="/">Clip<b>Flow</b></a>
 <a class="nl" href="/features">Features</a>
@@ -261,7 +261,7 @@ export default {
       }
       return authed ? new Response(null, { status: 302, headers: { 'Location': '/dashboard' } }) : html(loginPage());
     }
-    if (p === '/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et') return new Response('tiktok-developers-site-verification=y0q4dNmzX45pmh3mSQtLGJUz8888D7et', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+    if (['/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et','/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et.txt','/.well-known/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et'].includes(p)) return new Response('tiktok-developers-site-verification=y0q4dNmzX45pmh3mSQtLGJUz8888D7et', { status: 200, headers: { 'Content-Type': 'text/plain' } });
         return html(page('Not found', `<div class="wrap hero"><h1>Page not found</h1><p class="sub">That page does not exist. <a href="/" style="border-bottom:1px solid var(--line)">Back to home</a></p></div>`), 404);
   }
 };
