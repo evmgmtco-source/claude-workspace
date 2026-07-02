@@ -1,57 +1,201 @@
 require('dotenv').config();
-const express=require('express'),fs=require('fs'),path=require('path'),{exec}=require('child_process'),cors=require('cors');
+const express=require('express'),fs=require('fs'),path=require('path'),{exec}=require('child_process'),cors=require('cors'),https=require('https'),http=require('http');
 const {TwitterApi}=require('twitter-api-v2');
-const app=express();app.use(cors());app.use(express.json({limit:'50mb'}));
-const API_KEY=process.env.WORKSPACE_API_KEY||'claude-workspace-key';
-const ANTHROPIC_KEY=process.env.ANTHROPIC_API_KEY;
-const GITHUB_TOKEN=process.env.GITHUB_TOKEN;
-const CF_TOKEN=process.env.CLOUDFLARE_API_TOKEN;
-const CF_ACCOUNT=process.env.CLOUDFLARE_ACCOUNT_ID;
-const FILES_DIR='./workspace/files',MEMORY_FILE='./workspace/memory.json',LOG_FILE='./workspace/log.json';
-['./workspace',FILES_DIR].forEach(d=>{if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true})});
-if(!fs.existsSync(MEMORY_FILE))fs.writeFileSync(MEMORY_FILE,JSON.stringify({notes:{},context:{},tasks:[]}));
-if(!fs.existsSync(LOG_FILE))fs.writeFileSync(LOG_FILE,JSON.stringify([]));
-function auth(req,res,next){if(req.headers['x-api-key']!==API_KEY)return res.status(401).json({error:'Unauthorized'});next();}
-function addLog(action,detail){try{const logs=JSON.parse(fs.readFileSync(LOG_FILE));logs.unshift({action,detail,ts:new Date().toISOString()});if(logs.length>500)logs.length=500;fs.writeFileSync(LOG_FILE,JSON.stringify(logs));}catch(e){}}
-function getTwitterClient(){return new TwitterApi({appKey:process.env.X_API_KEY,appSecret:process.env.X_API_SECRET,accessToken:process.env.X_ACCESS_TOKEN,accessSecret:process.env.X_ACCESS_SECRET});}
-app.get('/files',auth,(req,res)=>{function walk(dir,base=''){if(!fs.existsSync(dir))return[];return fs.readdirSync(dir).flatMap(f=>{const full=path.join(dir,f),rel=path.join(base,f);return fs.statSync(full).isDirectory()?walk(full,rel):[{path:rel,size:fs.statSync(full).size}];});}res.json(walk(FILES_DIR));});
-app.get('/file',auth,(req,res)=>{const fp=path.join(FILES_DIR,req.query.path);if(!fs.existsSync(fp))return res.status(404).json({error:'Not found'});res.json({content:fs.readFileSync(fp,'utf8'),path:req.query.path});});
-app.post('/file',auth,(req,res)=>{const full=path.join(FILES_DIR,req.body.path);fs.mkdirSync(path.dirname(full),{recursive:true});fs.writeFileSync(full,req.body.content);addLog('write',req.body.path);res.json({success:true});});
-app.delete('/file',auth,(req,res)=>{const full=path.join(FILES_DIR,req.query.path);if(fs.existsSync(full))fs.unlinkSync(full);addLog('delete',req.query.path);res.json({success:true});});
-app.post('/exec',auth,(req,res)=>{addLog('exec',req.body.command.slice(0,100));exec(req.body.command,{cwd:FILES_DIR,timeout:30000},(err,stdout,stderr)=>{res.json({stdout:stdout||'',stderr:stderr||'',error:err?err.message:null});});});
-app.get('/memory',auth,(req,res)=>res.json(JSON.parse(fs.readFileSync(MEMORY_FILE))));
-app.post('/memory',auth,(req,res)=>{const mem=JSON.parse(fs.readFileSync(MEMORY_FILE));const{key,value,type}=req.body;if(type==='note')mem.notes[key]={value,ts:new Date().toISOString()};else if(type==='context')mem.context[key]=value;else if(type==='task')mem.tasks.unshift({task:key,value,ts:new Date().toISOString(),done:false});fs.writeFileSync(MEMORY_FILE,JSON.stringify(mem,null,2));addLog('memory',type+':'+key);res.json({success:true});});
-app.patch('/memory/task',auth,(req,res)=>{const mem=JSON.parse(fs.readFileSync(MEMORY_FILE));if(mem.tasks[req.body.index])mem.tasks[req.body.index].done=true;fs.writeFileSync(MEMORY_FILE,JSON.stringify(mem,null,2));res.json({success:true});});
-app.post('/think',auth,async(req,res)=>{if(!ANTHROPIC_KEY)return res.status(500).json({error:'No API key'});const{prompt,system}=req.body;addLog('think',prompt.slice(0,80));const mem=JSON.parse(fs.readFileSync(MEMORY_FILE));const ctx=Object.entries(mem.context).map(([k,v])=>k+': '+v).join('\n');try{const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,system:system||('Autonomous AI agent.\n'+ctx),messages:[{role:'user',content:prompt}]})});const d=await r.json();const text=d.content&&d.content[0]?d.content[0].text:JSON.stringify(d);addLog('think-done',text.slice(0,80));res.json({response:text,tokens:d.usage});}catch(e){res.status(500).json({error:e.message});}});
-app.post('/github/push',auth,async(req,res)=>{if(!GITHUB_TOKEN)return res.status(500).json({error:'No token'});const{repo,path:fp,content,message}=req.body;try{const g=await fetch('https://api.github.com/repos/evmgmtco-source/'+repo+'/contents/'+fp,{headers:{'Authorization':'Bearer '+GITHUB_TOKEN,'Accept':'application/vnd.github.v3+json'}});const gj=await g.json();const enc=Buffer.from(content).toString('base64');const p=await fetch('https://api.github.com/repos/evmgmtco-source/'+repo+'/contents/'+fp,{method:'PUT',headers:{'Authorization':'Bearer '+GITHUB_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({message:message||'Update',content:enc,sha:gj.sha})});const pj=await p.json();addLog('github',repo+'/'+fp);res.json({success:p.ok,commit:pj.commit?.sha?.substring(0,7)});}catch(e){res.status(500).json({error:e.message});}});
-async function postTweet(text){
+const app=express();app.use(cors());app.use(express.json({limit:'10mb'}));
+
+const K=process.env.WORKSPACE_API_KEY||'claude-workspace-key';
+const ANT=process.env.ANTHROPIC_API_KEY;
+const GH=process.env.GITHUB_TOKEN;
+const CF_T=process.env.CLOUDFLARE_API_TOKEN;
+const CF_A=process.env.CLOUDFLARE_ACCOUNT_ID;
+const XK=process.env.X_API_KEY,XS=process.env.X_API_SECRET,XT=process.env.X_ACCESS_TOKEN,XTS=process.env.X_ACCESS_SECRET;
+
+const FD='./workspace/files',MF='./workspace/memory.json',LF='./workspace/log.json',PF='./workspace/plans.json';
+[FD,'./workspace'].forEach(d=>{if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true})});
+if(!fs.existsSync(MF))fs.writeFileSync(MF,JSON.stringify({notes:{},context:{},tasks:[]}));
+if(!fs.existsSync(LF))fs.writeFileSync(LF,JSON.stringify([]));
+if(!fs.existsSync(PF))fs.writeFileSync(PF,JSON.stringify({plans:[],lastPlan:null}));
+
+function auth(r,res,n){if(r.headers['x-api-key']!==K)return res.status(401).json({error:'Unauthorized'});n();}
+function log(a,d){try{const l=JSON.parse(fs.readFileSync(LF));l.unshift({a,d,t:new Date().toISOString()});if(l.length>1000)l.length=1000;fs.writeFileSync(LF,JSON.stringify(l));}catch(e){}}
+function mem(){return JSON.parse(fs.readFileSync(MF));}
+function saveMem(m){fs.writeFileSync(MF,JSON.stringify(m,null,2));}
+
+// ── FILE OPS ──────────────────────────────────────────────────────────────────
+app.get('/files',auth,(q,r)=>{function w(d,b=''){if(!fs.existsSync(d))return[];return fs.readdirSync(d).flatMap(f=>{const p=path.join(d,f),rel=path.join(b,f);return fs.statSync(p).isDirectory()?w(p,rel):[{path:rel,size:fs.statSync(p).size}];});}r.json(w(FD));});
+app.get('/file',auth,(q,r)=>{const p=path.join(FD,q.query.path);if(!fs.existsSync(p))return r.status(404).json({error:'Not found'});r.json({content:fs.readFileSync(p,'utf8')});});
+app.post('/file',auth,(q,r)=>{const p=path.join(FD,q.body.path);fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,q.body.content);log('write',q.body.path);r.json({success:true});});
+app.delete('/file',auth,(q,r)=>{const p=path.join(FD,q.query.path);if(fs.existsSync(p))fs.unlinkSync(p);log('del',q.query.path);r.json({success:true});});
+app.post('/exec',auth,(q,r)=>{log('exec',q.body.command.slice(0,80));exec(q.body.command,{cwd:FD,timeout:30000},(e,o,err)=>r.json({stdout:o||'',stderr:err||'',error:e?.message||null}));});
+
+// ── MEMORY ────────────────────────────────────────────────────────────────────
+app.get('/memory',auth,(q,r)=>r.json(mem()));
+app.post('/memory',auth,(q,r)=>{const m=mem();const{key,value,type}=q.body;if(type==='note')m.notes[key]={value,t:new Date().toISOString()};else if(type==='context')m.context[key]=value;else if(type==='task')m.tasks.unshift({task:key,value,t:new Date().toISOString(),done:false});saveMem(m);log('mem',type+':'+key);r.json({success:true});});
+app.patch('/memory/task',auth,(q,r)=>{const m=mem();if(m.tasks[q.body.index])m.tasks[q.body.index].done=true;saveMem(m);r.json({success:true});});
+app.delete('/memory/context',auth,(q,r)=>{const m=mem();delete m.context[q.query.key];saveMem(m);r.json({success:true});});
+
+// ── WEB FETCH (browse any URL) ────────────────────────────────────────────────
+app.post('/fetch',auth,async(q,r)=>{
+  const {url,method='GET',headers={},body:bd}=q.body;
+  log('fetch',url.slice(0,80));
   try{
-    const {TwitterApi}=require('twitter-api-v2');
-    const client=new TwitterApi({appKey:process.env.X_API_KEY,appSecret:process.env.X_API_SECRET,accessToken:process.env.X_ACCESS_TOKEN,accessSecret:process.env.X_ACCESS_SECRET});
-    const result=await client.v1.tweet(text);
-    addLog('tweet','OK: '+text.slice(0,50));
-    return{success:true,id:result.id_str};
+    const opts={method,headers:{'User-Agent':'Mozilla/5.0 (compatible; ClaudeAgent/1.0)',...headers}};
+    if(bd)opts.body=typeof bd==='string'?bd:JSON.stringify(bd);
+    const res=await fetch(url,opts);
+    const ct=res.headers.get('content-type')||'';
+    const text=await res.text();
+    r.json({status:res.status,ok:res.ok,contentType:ct,body:text.slice(0,50000)});
+  }catch(e){r.status(500).json({error:e.message});}
+});
+
+// ── THINK ─────────────────────────────────────────────────────────────────────
+app.post('/think',auth,async(q,r)=>{
+  if(!ANT)return r.status(500).json({error:'No API key'});
+  const{prompt,system,model='claude-haiku-4-5-20251001',max_tokens=1000}=q.body;
+  log('think',prompt.slice(0,60));
+  const m=mem();
+  const ctx=Object.entries(m.context).map(([k,v])=>k+': '+v).join('\n');
+  const tasks=m.tasks.filter(t=>!t.done).slice(0,5).map(t=>'- '+t.task).join('\n');
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANT,'anthropic-version':'2023-06-01'},body:JSON.stringify({model,max_tokens,system:system||('Autonomous AI agent for AgentNet/ClipFlow.\nContext:\n'+ctx+'\nPending:\n'+tasks),messages:[{role:'user',content:prompt}]})});
+    const d=await res.json();
+    const text=d.content?.[0]?.text||JSON.stringify(d);
+    log('think-done',text.slice(0,60));
+    r.json({response:text,tokens:d.usage,model});
+  }catch(e){r.status(500).json({error:e.message});}
+});
+
+// ── GITHUB PUSH ───────────────────────────────────────────────────────────────
+app.post('/github/push',auth,async(q,r)=>{
+  if(!GH)return r.status(500).json({error:'No GH token'});
+  const{repo,path:fp,content,message}=q.body;
+  try{
+    const g=await fetch('https://api.github.com/repos/evmgmtco-source/'+repo+'/contents/'+fp,{headers:{'Authorization':'Bearer '+GH}});
+    const gj=await g.json();
+    const enc=Buffer.from(content).toString('base64');
+    const p=await fetch('https://api.github.com/repos/evmgmtco-source/'+repo+'/contents/'+fp,{method:'PUT',headers:{'Authorization':'Bearer '+GH,'Content-Type':'application/json'},body:JSON.stringify({message:message||'Agent update',content:enc,sha:gj.sha})});
+    const pj=await p.json();
+    log('gh-push',repo+'/'+fp);
+    r.json({success:p.ok,commit:pj.commit?.sha?.substring(0,7)});
+  }catch(e){r.status(500).json({error:e.message});}
+});
+
+// ── TWITTER ───────────────────────────────────────────────────────────────────
+app.post('/tweet',auth,async(q,r)=>{
+  if(!XT)return r.status(500).json({error:'No token'});
+  try{
+    const client=new TwitterApi({appKey:XK,appSecret:XS,accessToken:XT,accessSecret:XTS});
+    const result=await client.v2.tweet(q.body.text);
+    log('tweet','OK: '+q.body.text.slice(0,50));
+    r.json({success:true,id:result.data.id});
   }catch(e){
-    const msg=e.message||'unknown';
-    const data=e.data?JSON.stringify(e.data).slice(0,150):'';
-    addLog('tweet-fail',msg.slice(0,80)+' '+data);
-    return{success:false,error:msg,data:e.data};
+    log('tweet-fail',e.message?.slice(0,80));
+    r.json({success:false,error:e.message,data:e.data});
   }
-}
-app.post('/tweet',auth,async(req,res)=>{const result=await postTweet(req.body.text);res.json(result);});
-app.post('/cloudflare/deploy',auth,async(req,res)=>{if(!CF_TOKEN||!CF_ACCOUNT)return res.status(500).json({error:'No CF creds'});const{name,script}=req.body;try{const r=await fetch('https://api.cloudflare.com/client/v4/accounts/'+CF_ACCOUNT+'/workers/scripts/'+name,{method:'PUT',headers:{Authorization:'Bearer '+CF_TOKEN,'Content-Type':'application/javascript'},body:script});const d=await r.json();addLog('cf-deploy',name);res.json({success:d.success,errors:d.errors});}catch(e){res.status(500).json({error:e.message});}});
-const TWEETS=["Just deployed ClipFlow - an AI tool that auto-posts Kick.com clips to TikTok. Built this overnight with zero sleep. The future of content creation is automated. ð¤ #Kick #TikTok #AI","xQc, IShowSpeed, KaiCenat generate hours of content every day. Most of it never gets clipped. We're fixing that with AI. #Kick #StreamerClips","The content creator grind is real. Stream for 8 hours, clip for 2 hours, edit for 1 hour, post for 30 min. ClipFlow automates the last 3 steps. #ContentCreation","Building in public: Day 1 of AgentNet. Deployed a Kick-to-TikTok automation tool, a Cloudflare proxy, and a landing page. All autonomous. #BuildInPublic #AI","If you're a Kick streamer looking to grow on TikTok without the editing grind - drop your username below ð Testing ClipFlow with early users. #Kick #TikTok"];
-let tweetIdx=0,cronRuns=0,tweetsPosted=0;
-async function cron(){
+});
+
+// ── CLOUDFLARE ────────────────────────────────────────────────────────────────
+app.post('/cloudflare/deploy',auth,async(q,r)=>{
+  if(!CF_T||!CF_A)return r.status(500).json({error:'No CF creds'});
+  const{name,script}=q.body;
+  try{
+    const res=await fetch('https://api.cloudflare.com/client/v4/accounts/'+CF_A+'/workers/scripts/'+name,{method:'PUT',headers:{'Authorization':'Bearer '+CF_T,'Content-Type':'application/javascript'},body:script});
+    const d=await res.json();
+    log('cf-deploy',name);
+    r.json({success:d.success,errors:d.errors});
+  }catch(e){r.status(500).json({error:e.message});}
+});
+
+// ── STRIPE CHECK ──────────────────────────────────────────────────────────────
+app.get('/stripe/revenue',auth,async(q,r)=>{
+  const sk=process.env.STRIPE_SECRET_KEY;
+  if(!sk)return r.json({revenue:0,note:'No Stripe key'});
+  try{
+    const res=await fetch('https://api.stripe.com/v1/balance',{headers:{'Authorization':'Bearer '+sk}});
+    const d=await res.json();
+    r.json({available:d.available,pending:d.pending});
+  }catch(e){r.status(500).json({error:e.message});}
+});
+
+// ── LOG & STATUS ──────────────────────────────────────────────────────────────
+app.get('/log',auth,(q,r)=>r.json(JSON.parse(fs.readFileSync(LF)).slice(0,100)));
+app.get('/status',(q,r)=>{const m=mem();r.json({v:'6.0',status:'online',uptime:Math.round(process.uptime()/60)+'m',capabilities:{claude:!!ANT,github:!!GH,twitter:!!XT,cloudflare:!!CF_T,webFetch:true,selfModify:true},memory:{context:Object.keys(m.context).length,tasks:m.tasks.filter(t=>!t.done).length},cronRuns,revenueActions});});
+app.get('/',(q,r)=>{const m=mem();const l=JSON.parse(fs.readFileSync(LF)).slice(0,30);r.send('<html><head><title>Claude Workspace v6</title><style>body{font-family:monospace;background:#060a1a;color:#ccc;padding:20px;max-width:960px;margin:0 auto}h1{color:#00ffc8}h2{color:#444;font-size:10px;letter-spacing:3px;text-transform:uppercase;margin:14px 0 8px}.card{background:#0d1225;border:1px solid rgba(0,255,200,.12);padding:14px;margin:8px 0;border-radius:4px}.stat{display:inline-block;margin-right:14px;font-size:12px}.stat b{color:#00ffc8}.item{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}.key{color:#00ffc8}.ok{color:#00ff88}.ts{color:#333;float:right}</style></head><body><h1>CLAUDE WORKSPACE v6</h1><p style="color:#444;font-size:10px">Fully autonomous agent - plans AND executes every 3h</p><div class="card"><span class="stat">Uptime: <b>'+Math.round(process.uptime()/60)+'m</b></span><span class="stat">Cron: <b>'+cronRuns+'</b></span><span class="stat">Revenue actions: <b>'+revenueActions+'</b></span><span class="stat">Claude: <b class="'+(ANT?'ok':'')+'">'+( ANT?'✓':'✗')+'</b></span><span class="stat">GitHub: <b class="'+(GH?'ok':'')+'">'+( GH?'✓':'✗')+'</b></span><span class="stat">CF: <b class="'+(CF_T?'ok':'')+'">'+( CF_T?'✓':'✗')+'</b></span></div><h2>Context</h2><div class="card">'+Object.entries(m.context).map(([k,v])=>'<div class="item"><span class="key">'+k+'</span>: '+String(v).slice(0,120)+'</div>').join('')+'</div><h2>Plans & Actions</h2><div class="card">'+JSON.parse(fs.readFileSync(PF)).plans.slice(0,5).map(p=>'<div class="item"><span class="key">'+p.t.slice(11,19)+'</span> '+p.plan.slice(0,100)+'</div>').join('')+'</div><h2>Log</h2><div class="card">'+l.map(x=>'<div class="item"><span class="key">'+x.a+'</span> '+x.d+'<span class="ts">'+x.t.slice(11,19)+'</span></div>').join('')+'</div></body></html>');});
+
+// ── AUTONOMOUS AGENT LOOP ─────────────────────────────────────────────────────
+let cronRuns=0,revenueActions=0;
+
+async function agentLoop(){
   cronRuns++;
-  addLog('cron','#'+cronRuns);
-  if(cronRuns%3===0&&tweetIdx<TWEETS.length){
-    const r=await postTweet(TWEETS[tweetIdx]);
-    if(r.success){tweetsPosted++;tweetIdx++;}
-  }
+  log('agent-loop','Run #'+cronRuns);
+  const m=mem();
+  const ctx=Object.entries(m.context).map(([k,v])=>k+': '+v).join('\n');
+
+  try{
+    // 1. THINK: plan concrete next action
+    const planRes=await fetch('http://localhost:'+PORT+'/think',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':K},body:JSON.stringify({
+      prompt:'You are an autonomous agent. Revenue goal: get ClipFlow signups at clipflow.evmgmtco.workers.dev (£9.99/mo via buy.stripe.com/bJe3cu4Ii99Le2F17B1VK00). You can: fetch URLs, push to GitHub, deploy Cloudflare workers, check APIs. What ONE concrete action should you take right now to drive revenue or reduce costs? Reply with JSON: {"action":"fetch|github|cloudflare|tweet|wait","details":{...},"reason":"why"}',
+      system:'Autonomous revenue agent. Be decisive. Pick one action and explain it in JSON only, no other text.',
+      max_tokens:400
+    })});
+    const planData=await planRes.json();
+    const planText=planData.response||'';
+    
+    // Store plan
+    const plans=JSON.parse(fs.readFileSync(PF));
+    plans.plans.unshift({t:new Date().toISOString(),plan:planText.slice(0,200)});
+    if(plans.plans.length>50)plans.plans.length=50;
+    fs.writeFileSync(PF,JSON.stringify(plans));
+    log('agent-plan',planText.slice(0,80));
+
+    // 2. EXECUTE: parse and run the planned action
+    let actionData={};
+    try{
+      const jsonMatch=planText.match(/\{[\s\S]+\}/);
+      if(jsonMatch)actionData=JSON.parse(jsonMatch[0]);
+    }catch(e){}
+
+    if(actionData.action==='fetch'&&actionData.details?.url){
+      const fetchRes=await fetch('http://localhost:'+PORT+'/fetch',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':K},body:JSON.stringify({url:actionData.details.url})});
+      const fetchData=await fetchRes.json();
+      log('agent-fetched',actionData.details.url.slice(0,60)+' status:'+fetchData.status);
+      // Store insight in memory
+      if(fetchData.ok&&fetchData.body){
+        const m2=mem();
+        m2.notes['fetch_'+Date.now()]={value:'Fetched '+actionData.details.url+': '+fetchData.body.slice(0,200),t:new Date().toISOString()};
+        saveMem(m2);
+      }
+      revenueActions++;
+    }
+    else if(actionData.action==='cloudflare'&&actionData.details?.script){
+      const cfRes=await fetch('http://localhost:'+PORT+'/cloudflare/deploy',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':K},body:JSON.stringify({name:actionData.details.name||'clipflow',script:actionData.details.script})});
+      const cfData=await cfRes.json();
+      log('agent-cf-deploy',cfData.success?'OK':'FAIL');
+      if(cfData.success)revenueActions++;
+    }
+    else if(actionData.action==='tweet'&&actionData.details?.text){
+      const tRes=await fetch('http://localhost:'+PORT+'/tweet',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':K},body:JSON.stringify({text:actionData.details.text})});
+      const tData=await tRes.json();
+      log('agent-tweet',tData.success?'OK: '+actionData.details.text.slice(0,40):'FAIL: '+tData.error);
+      if(tData.success)revenueActions++;
+    }
+    else if(actionData.action==='github'&&actionData.details){
+      const ghRes=await fetch('http://localhost:'+PORT+'/github/push',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':K},body:JSON.stringify(actionData.details)});
+      const ghData=await ghRes.json();
+      log('agent-gh',ghData.commit||ghData.error||'done');
+      if(ghData.success)revenueActions++;
+    }
+    else{log('agent-wait','No executable action this cycle');}
+
+  }catch(e){log('agent-err',e.message?.slice(0,80));}
 }
-app.get('/log',auth,(req,res)=>res.json(JSON.parse(fs.readFileSync(LOG_FILE)).slice(0,50)));
-app.get('/status',(req,res)=>{const mem=JSON.parse(fs.readFileSync(MEMORY_FILE));res.json({status:'online',uptime:Math.round(process.uptime()/60)+'m',claude:!!ANTHROPIC_KEY,github:!!GITHUB_TOKEN,twitter:!!(process.env.X_ACCESS_TOKEN),cloudflare:!!CF_TOKEN,tasks:mem.tasks.filter(t=>!t.done).length,cronRuns,tweetsPosted});});
-app.get('/',(req,res)=>{const mem=JSON.parse(fs.readFileSync(MEMORY_FILE));const logs=JSON.parse(fs.readFileSync(LOG_FILE)).slice(0,20);res.send('<html><head><title>Claude Workspace v5</title><style>body{font-family:monospace;background:#060a1a;color:#ccc;padding:20px;max-width:960px;margin:0 auto}h1{color:#00ffc8}h2{color:#444;font-size:10px;letter-spacing:3px;text-transform:uppercase;margin:14px 0 8px}.card{background:#0d1225;border:1px solid rgba(0,255,200,.12);padding:14px;margin:8px 0;border-radius:4px}.stat{display:inline-block;margin-right:14px;font-size:12px}.stat b{color:#00ffc8}.item{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}.key{color:#00ffc8}.ok{color:#00ff88}.ts{color:#333;float:right}</style></head><body><h1>ð¤ CLAUDE WORKSPACE v5</h1><div class="card"><span class="stat">â± <b>'+Math.round(process.uptime()/60)+'m</b></span><span class="stat">ð <b>'+cronRuns+'</b></span><span class="stat">ð¦ <b>'+tweetsPosted+' tweets</b></span><span class="stat">ð§  <b class="'+(ANTHROPIC_KEY?'ok':'')+'">Claude '+(ANTHROPIC_KEY?'â':'â')+'</b></span><span class="stat">ð <b class="'+(GITHUB_TOKEN?'ok':'')+'">GitHub '+(GITHUB_TOKEN?'â':'â')+'</b></span><span class="stat">âï¸ <b class="'+(CF_TOKEN?'ok':'')+'">CF '+(CF_TOKEN?'â':'â')+'</b></span></div><h2>Context</h2><div class="card">'+Object.entries(mem.context).map(([k,v])=>'<div class="item"><span class="key">'+k+'</span>: '+String(v).slice(0,120)+'</div>').join('')+'</div><h2>Log</h2><div class="card">'+logs.map(l=>'<div class="item"><span class="key">'+l.action+'</span> '+l.detail+'<span class="ts">'+l.ts.slice(11,19)+'</span></div>').join('')+'</div></body></html>');});
+
 const PORT=process.env.PORT||8080;
-app.listen(PORT,()=>{addLog('startup','v5 - twitter-api-v2 + autonomous');console.log('v5 port '+PORT);setInterval(cron,3*60*60*1000);setTimeout(cron,30*60*1000);});
+app.listen(PORT,()=>{
+  log('startup','v6 autonomous agent online');
+  console.log('v6 port '+PORT);
+  // Run every 3 hours
+  setInterval(agentLoop,3*60*60*1000);
+  // First run in 5 minutes
+  setTimeout(agentLoop,5*60*1000);
+});
