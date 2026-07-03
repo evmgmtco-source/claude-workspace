@@ -8,6 +8,8 @@
 //   CLIP_MAX_SOURCE_MB    max source download size     (default 500)
 //   CLIP_MAX_OUTPUT_MB    max encoded output size      (default 100)
 //   CLIP_TIMEOUT_MS       per-subprocess timeout       (default 300000)
+//   CLIP_VERTICAL_HEIGHT  vertical output height       (default 1280 → 720x1280; 1920 for 1080p)
+//   CLIP_ENCODE_THREADS   x264 thread cap              (default 2)
 //
 // Usage:
 //   const { cutClip } = require('./clip-pipeline');
@@ -98,7 +100,7 @@ async function downloadSource(url, { sectionStart = null, sectionEnd = null } = 
 
 // ---------- 3. ffmpeg segment ----------
 
-async function cutSegment(srcFile, { start = 0, end, duration, outFile, precise = true, vertical = false }) {
+async function cutSegment(srcFile, { start = 0, end, duration, outFile, precise = false, vertical = false }) {
   const s = toSeconds(start) ?? 0;
   const d = duration != null ? toSeconds(duration)
           : end != null ? toSeconds(end) - s
@@ -109,10 +111,21 @@ async function cutSegment(srcFile, { start = 0, end, duration, outFile, precise 
 
   if (precise || vertical) {
     if (vertical) {
-      args.push('-vf', "crop=trunc(ih*9/32)*2:ih,scale=1080:1920");
+      // Even-width crop (libx264 rejects odd dims), then scale to vertical target.
+      const h = Number(process.env.CLIP_VERTICAL_HEIGHT) || 1280; // 720x1280 default; set 1920 for full 1080p
+      const w = Math.round(h * 9 / 16 / 2) * 2;
+      args.push('-vf', `crop=trunc(ih*9/32)*2:ih,scale=${w}:${h}`);
     }
-    args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-              '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart');
+    // Lightweight encode tuned for Railway's small container:
+    // ultrafast preset + capped threads + ref=1/no lookahead keeps
+    // x264's memory footprint low enough to avoid OOM kills.
+    args.push(
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26',
+      '-threads', String(Number(process.env.CLIP_ENCODE_THREADS) || 2),
+      '-x264-params', 'ref=1:rc-lookahead=10:bframes=0',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart'
+    );
   } else {
     args.push('-c', 'copy');
   }
@@ -140,7 +153,7 @@ async function probeDuration(file) {
 
 // ---------- pipeline ----------
 
-async function cutClip({ url, start = 0, end, duration, outDir = './clips', format = 'mp4', precise = true, vertical = false, keepSource = false }) {
+async function cutClip({ url, start = 0, end, duration, outDir = './clips', format = 'mp4', precise = false, vertical = false, keepSource = false }) {
   if (!url) throw new Error('url is required');
 
   const s = toSeconds(start) ?? 0;
