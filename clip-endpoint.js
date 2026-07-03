@@ -10,7 +10,7 @@ const { cutClip } = require('./clip-pipeline');
 
 module.exports = function mountClipEndpoint(app, { outDir = process.env.CLIP_OUT_DIR || '/data/clips' } = {}) {
   app.post('/clip', async (req, res) => {
-    const { url, start = 0, end, duration, vertical = false, precise = true } = req.body || {};
+    const { url, start = 0, end, duration, vertical = false, precise = false } = req.body || {};
     if (!url) return res.status(400).json({ ok: false, error: 'url is required' });
     if (end == null && duration == null) {
       return res.status(400).json({ ok: false, error: 'end or duration is required' });
