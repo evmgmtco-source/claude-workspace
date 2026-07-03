@@ -109,7 +109,7 @@ async function cutSegment(srcFile, { start = 0, end, duration, outFile, precise 
 
   if (precise || vertical) {
     if (vertical) {
-      args.push('-vf', "crop=ih*9/16:ih,scale=1080:1920");
+      args.push('-vf', "crop=trunc(ih*9/32)*2:ih,scale=1080:1920");
     }
     args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
               '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart');
