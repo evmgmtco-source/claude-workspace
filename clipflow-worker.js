@@ -338,6 +338,13 @@ ${NAV.map(([id,label,ic])=>`<button class="ni${id==='dashboard'?' on':''}" data-
 </div>
 <button id="cgo" class="btn go">Cut clip</button>
 </div>
+<div class="panel" id="detector" style="margin-top:16px">
+<h2>Detected highlights</h2>
+<p class="sub">Paste a Kick VOD URL and ClipFlow scans the chat replay for the moments your viewers went off — message-rate spikes and emote bursts, scored against the stream's own baseline.</p>
+<div class="field full"><label for="du">Kick VOD URL</label><input id="du" type="url" placeholder="https://kick.com/video/…"></div>
+<button id="dgo" class="btn go">Detect highlights</button>
+<div id="dres" style="margin-top:14px"></div>
+</div>
 <h2 style="font-size:15px;font-weight:700;margin-bottom:12px">Recent clips</h2>
 <div class="tbl-wrap"><table id="cliptbl">
 <thead><tr><th>Clip</th><th>Detected</th><th>Length</th><th>Status</th><th></th></tr></thead>
@@ -400,6 +407,37 @@ toast('Clip ready \u2014 '+secs+(x.j.sizeBytes?' \u00b7 '+(x.j.sizeBytes/1048576
 })
 .catch(function(e){go.disabled=false;go.textContent='Cut clip';toast('Request failed: '+e.message,1);});
 });
+var dgo=document.getElementById('dgo');
+dgo.addEventListener('click',function(){
+var du=document.getElementById('du').value.trim();
+if(!du){toast('Paste a Kick VOD URL first.',1);return;}
+dgo.disabled=true;dgo.innerHTML='<span class="spin"></span> Scanning chat…';
+toast('Scanning the chat replay — long VODs take a minute.');
+fetch('/api/detect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:du,top:5})})
+.then(function(r){return r.json().then(function(j){return{s:r.status,j:j}})})
+.then(function(x){
+dgo.disabled=false;dgo.textContent='Detect highlights';
+var box=document.getElementById('dres');box.innerHTML='';
+if(x.j&&x.j.ok&&x.j.highlights&&x.j.highlights.length){
+toast('Found '+x.j.highlights.length+' highlights from '+x.j.messages+' chat messages.');
+x.j.highlights.forEach(function(h){
+var row=document.createElement('div');
+row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px';
+row.innerHTML='<div><span class="mono">'+h.ts+'</span> · score '+h.score+' · '+h.msgRate+' msgs'+(h.emoteRate?' · '+h.emoteRate+' emotes':'')+'</div>';
+var b=document.createElement('button');b.className='btn go';b.textContent='Cut this';
+b.addEventListener('click',function(){
+document.getElementById('cu').value=du;
+document.getElementById('cs').value=String(h.suggestStart);
+document.getElementById('cd').value=String(h.suggestDuration);
+document.getElementById('clipper').scrollIntoView({behavior:'smooth'});
+toast('Prefilled — hit Cut clip.');
+});
+row.appendChild(b);box.appendChild(row);
+});
+}else{toast('Detection failed: '+((x.j&&x.j.error)||('HTTP '+x.s)),1);}
+})
+.catch(function(e){dgo.disabled=false;dgo.textContent='Detect highlights';toast('Request failed: '+e.message,1);});
+});
 })();
 </script>
 </body></html>`;
@@ -441,6 +479,12 @@ export default {
       const r = await fetch(RAIL + '/clip/download/' + encodeURIComponent(f), { headers: { 'x-api-key': WSKEY } });
       if (!r.ok) return new Response('Clip not found', { status: r.status });
       return new Response(r.body, { status: 200, headers: { 'Content-Type': 'video/mp4', 'Content-Disposition': 'attachment; filename="' + f.replace(/[^\w.-]/g, '') + '"' } });
+    }
+    if (p === '/api/detect' && request.method === 'POST') {
+      if (!authed) return new Response(JSON.stringify({ ok: false, error: 'Not logged in' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      const body = await request.text();
+      const r = await fetch(RAIL + '/detect', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': WSKEY }, body });
+      return new Response(await r.text(), { status: r.status, headers: { 'Content-Type': 'application/json' } });
     }
     if (['/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et','/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et.txt','/.well-known/tiktoky0q4dNmzX45pmh3mSQtLGJUz8888D7et'].includes(p)) return new Response('tiktok-developers-site-verification=y0q4dNmzX45pmh3mSQtLGJUz8888D7et', { status: 200, headers: { 'Content-Type': 'text/plain' } });
         return html(page('Not found', `<div class="wrap hero"><h1>Page not found</h1><p class="sub">That page does not exist. <a href="/" style="border-bottom:1px solid var(--line)">Back to home</a></p></div>`), 404);
