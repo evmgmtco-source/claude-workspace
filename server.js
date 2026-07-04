@@ -232,6 +232,7 @@ async function deployWorkersFromRepo(){
 }
 
 try{require('./clip-endpoint')(app);log('startup','clip endpoint mounted');}catch(e){log('clip-mount-err',e.message);}
+try{require('./detect-endpoint')(app);log('startup','detect endpoint mounted');}catch(e){log('detect-mount-err',e.message);}
 
 const PORT=process.env.PORT||8080;
 app.listen(PORT,()=>{
