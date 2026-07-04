@@ -96,8 +96,8 @@ ${activeNote}
 const HOME = page('Clip once. Post everywhere.', `
 <div class="wrap hero">
 <div class="eyebrow">For Kick.com streamers</div>
-<h1>Your best stream moments,<br>clipped for TikTok.</h1>
-<p class="sub">ClipFlow watches your Kick streams, finds the moments chat went wild, and turns them into vertical, caption-ready clips for TikTok. You stream — the highlights handle themselves.</p>
+<h1>You stream.<br>Your TikTok posts itself.</h1>
+<p class="sub">Kick’s clip button gives you a raw horizontal moment — then the real work starts: scrubbing VODs, cropping to 9:16, captioning, uploading, timing the post. ClipFlow does that whole pipeline, not just the clip.</p>
 <div class="cta"><a class="btn go" href="/pricing">See pricing</a> &nbsp; <a class="btn" href="/features">How it works</a></div>
 <div class="strip" role="img" aria-label="A clip travels from your Kick stream, through ClipFlow, to TikTok">
 <div class="node k"><div class="tag">Kick.com</div><div class="t1">Live stream</div><div class="t2">chat spikes at 01:42:16</div></div>
@@ -113,6 +113,13 @@ const HOME = page('Clip once. Post everywhere.', `
 <div class="card"><div class="step">STEP 1</div><h3>Connect your Kick channel</h3><p>Paste your channel name. ClipFlow starts monitoring your streams and chat activity — no downloads, no OBS plugins.</p></div>
 <div class="card"><div class="step">STEP 2</div><h3>Highlights get detected</h3><p>Chat velocity, emote bursts and viewer spikes mark your best moments. Each one is cut to a vertical 9:16 clip with captions.</p></div>
 <div class="card"><div class="step">STEP 3</div><h3>Review and post to TikTok</h3><p>Approve clips from your dashboard and post them to your connected TikTok account, on your schedule.</p></div>
+</div>
+</div></section><section><div class="wrap">
+<h2>“Why not just use Kick’s free clip button?”</h2>
+<div class="grid">
+<div class="card"><h3>Kick’s clip button</h3><p>A raw horizontal clip of the last minute — if you remembered to press it live. Then you download it, crop it, caption it, and upload it yourself. The button is free; your evening isn’t.</p></div>
+<div class="card"><h3>A human clipper</h3><p>Streamers with momentum pay editors £400–£1,500 a month to do exactly this pipeline. It works — it’s just 50–150× the price of ClipFlow.</p></div>
+<div class="card"><h3>ClipFlow</h3><p>Highlights found from your VOD, cut vertical with captions, and queued to TikTok for £9.99/month. Less than an hour of an editor’s time — every month, on autopilot.</p></div>
 </div>
 </div></section>`);
 
@@ -134,6 +141,7 @@ const PRICING = page('Pricing', `
 <div class="wrap hero">
 <div class="eyebrow">Pricing</div>
 <h1>One plan. No editors' fees.</h1>
+<p class="sub" style="margin-top:14px">A human clipper runs £400+/month. Your own time in CapCut costs every evening. ClipFlow is £9.99.</p>
 <div class="price">
 <span class="beta">Early access</span>
 <div class="amt">£9.99<span>/month</span></div>
@@ -321,7 +329,7 @@ ${NAV.map(([id,label,ic])=>`<button class="ni${id==='dashboard'?' on':''}" data-
 </div>
 <div class="panel" id="clipper">
 <h2>Create a clip</h2>
-<p class="sub">Paste a Kick VOD or direct m3u8 URL, pick the moment, and ClipFlow cuts a TikTok-ready vertical clip.</p>
+<p class="sub">Paste a Kick VOD or m3u8 URL and ClipFlow handles the part that eats your evenings: the vertical crop, the render, the TikTok-ready file. No CapCut, no timeline scrubbing.</p>
 <div class="field full"><label for="cu">Source URL (Kick VOD / m3u8)</label><input id="cu" type="url" placeholder="https://stream.kick.com/.../master.m3u8"></div>
 <div class="frow">
 <div class="field"><label for="cs">Start (sec or mm:ss)</label><input id="cs" type="text" value="0"></div>
