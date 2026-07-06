@@ -7,7 +7,7 @@ export default {
     if (!target) {
       const p = u.pathname.replace(/^\/+/,'');
       if (!p) return new Response(JSON.stringify({usage:'/api/v1/video/{uuid} or ?url=https://kick.com/...'}),{headers:{...cors,'content-type':'application/json'}});
-      target = 'https://kick.com/' + p;
+      target = 'https://kick.com/' + p + u.search; // pass query string through (cursor pagination)
     }
     if (!/^https:\/\/kick\.com\//.test(target)) return new Response('bad target',{status:400,headers:cors});
     const upstream = await fetch(target, { headers: {
