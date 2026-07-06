@@ -44,33 +44,39 @@ async function fetchVideoMeta(uuid) {
 async function fetchChatTimeline({ channelId, startTime, durationSec }) {
   const times = []; // seconds-from-start, per message
   const emotes = [];
-  let cursor = new Date(startTime);
-  const endMs = durationSec ? startTime.getTime() + durationSec * 1000 : startTime.getTime() + 6 * 3600 * 1000;
-  let pages = 0, stuck = 0;
-  while (pages < MAX_PAGES && cursor.getTime() < endMs && stuck < 3) {
-    pages++;
-    const iso = cursor.toISOString().replace(/\.\d{3}Z$/, '.000Z');
+  const startMs = startTime.getTime();
+  const endMs = durationSec ? startMs + durationSec * 1000 : startMs + 6 * 3600 * 1000;
+  // Kick chat replay pagination (validated against real VOD, Jul 2026):
+  //   GET /api/v2/channels/{id}/messages?cursor=<microsecond epoch>
+  // returns up to 25 messages BEFORE that instant (newest-first) plus
+  // data.cursor for the next OLDER page. The start_time param is IGNORED
+  // by the API (always returns current live chat), so we walk BACKWARDS
+  // from the VOD end toward its start.
+  let cursor = String(endMs * 1000); // microseconds
+  let pages = 0, stuck = 0, oldestMs = Infinity;
+  while (pages < MAX_PAGES && stuck < 3) {
     let body;
     try {
-      body = await j(`${PROXY}/api/v2/channels/${channelId}/messages?start_time=${encodeURIComponent(iso)}`);
+      body = await j(`${PROXY}/api/v2/channels/${channelId}/messages?cursor=${cursor}`);
     } catch (e) { stuck++; continue; }
     const msgs = body?.data?.messages || body?.messages || [];
-    if (!msgs.length) { cursor = new Date(cursor.getTime() + 30000); stuck++; continue; }
-    stuck = 0;
-    let maxTs = cursor.getTime();
+    if (!msgs.length) { stuck++; continue; }
+    stuck = 0; pages++;
     for (const m of msgs) {
       const ts = new Date(m.created_at || m.createdAt || 0).getTime();
       if (!ts) continue;
-      if (ts > maxTs) maxTs = ts;
-      const rel = (ts - startTime.getTime()) / 1000;
-      if (rel < 0) continue;
+      if (ts < oldestMs) oldestMs = ts;
+      const rel = (ts - startMs) / 1000;
+      if (rel < 0 || ts > endMs) continue;
       times.push(rel);
       if (/\[emote:/i.test(m.content || '')) emotes.push(rel);
     }
-    // advance past last message; +1ms guards against re-fetching the same page forever
-    cursor = new Date(Math.max(maxTs + 1, cursor.getTime() + 1000));
+    const next = body?.data?.cursor;
+    if (!next || String(next) === cursor) break; // no further history
+    cursor = String(next);
+    if (oldestMs <= startMs) break; // reached VOD start
   }
-  return { times, emotes, pages };
+  return { times, emotes, pages, coveredFromSec: isFinite(oldestMs) ? Math.max(0, (oldestMs - startMs) / 1000) : null };
 }
 
 function scoreWindows(times, emotes, durationSec) {
