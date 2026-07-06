@@ -2,7 +2,7 @@
 // Routes: / /features /pricing /privacy /terms /login /dashboard /logout
 // API:    POST /api/clip  GET /api/clip/download  POST /api/detect  (session-gated proxies to Railway)
 const RAIL = 'https://claude-workspace-production-5330.up.railway.app';
-const WSKEY = 'claude-ws-8feae020-secret';
+const WSKEY = '__WSKEY__'; // real key injected at deploy time — never commit it
 
 const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">`;
 
